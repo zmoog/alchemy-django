@@ -16,3 +16,20 @@ DATABASES = {
 }
 
 #INSTALLED_APPS += ("debug_toolbar",)
+
+LOGGING = {
+    'version': 1,
+    'handlers': {
+        'console': {
+            'level': 'INFO',
+            # 'filters': ['require_debug_true'],
+            'class': 'logging.StreamHandler'
+        }
+    },
+    'loggers': {
+        'alchemy.accounts.models': {
+            'handlers': ['console'],
+            'level': 'DEBUG'
+        }
+    }
+}
