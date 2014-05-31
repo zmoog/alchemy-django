@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<h1>{{ object.description }} ({{ object.owner }})</h1>
+
+<p>tags:
+{% for tag in object.tags.all %}
+    <a href="{% url 'tag_detail' tag.name %}">{{ tag.name }}</a>
+{% endfor %}
+</p>
+
+<p>shops:
+{% for shop in object.shops.all %}
+    <a href="{% url 'shop_detail' shop.name %}">{{ shop.name }}</a>
+{% endfor %}
+</p>
+
+{% endblock %}

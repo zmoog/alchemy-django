@@ -2,20 +2,31 @@ from decimal import Decimal
 import logging
 import re
 
+from django.conf import settings
 from django.db import models
+from django.db import transaction
+from django.db.models import Q, Sum
+from django_extensions.db.fields import UUIDField
 
-from alchemy.core.models import TimeStampedModel
+from django_extensions.db.models import TimeStampedModel
 
 logger = logging.getLogger(__name__)
 
 
-
 class Account(TimeStampedModel):
+    id = UUIDField(primary_key=True)
     title = models.CharField(max_length=200)
     balance = models.DecimalField(max_digits=6, decimal_places=2, default=Decimal(0.0))
 
+    def related_transfers(self):
+        return Transfer.objects.filter(Q(source__id=self.id) | Q(destination__id=self.id)).order_by('-created')
+
+    def __str__(self):
+        return self.title
+
 
 class Transfer(TimeStampedModel):
+    id = UUIDField(primary_key=True)
     amount = models.DecimalField(max_digits=6, decimal_places=2)
     description = models.TextField()
     source = models.ForeignKey('Account', related_name='source')
@@ -23,32 +34,21 @@ class Transfer(TimeStampedModel):
     operation_date = models.DateField()
     value_date = models.DateField()
     tags = models.ManyToManyField('Tag', null=True, blank=True)
-    locations = models.ManyToManyField('Location', null=True, blank=True)
+    shops = models.ManyToManyField('Shop', null=True, blank=True)
+
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL)
 
     def save(self, *args, **kwargs):
 
-        super(Transfer, self).save(*args, **kwargs)
+        with transaction.atomic():
 
-        #tags = re.findall(r"(?<=#)\w+", self.description)
+            super(Transfer, self).save(*args, **kwargs)
 
-        #self.tags.clear()
+            self._extract_and_add(self.description, r"(?<=#)\w+", self.tags, Tag)
+            self._extract_and_add(self.description, r"(?<=@)\w+", self.shops, Shop)
 
-        #for tag_name in tags:
-        #    tag, created = Tag.objects.get_or_create(pk=tag_name)
-        #    logger.error("adding tag: %s (created: %s)" % (tag, created))
-        #    self.tags.add(tag)
-
-        #locations = re.findall(r"(?<=@)\w+", self.description)
-
-        #self.locations.clear()
-
-        #for location_name in locations:
-        #    location, created = Location.objects.get_or_create(pk=location_name)
-        #    logger.error("adding location: %s (created: %s)" % (location, created))
-        #    self.locations.add(location)
-
-        self._extract_and_add(self.description, r"(?<=#)\w+", self.tags, Tag)
-        self._extract_and_add(self.description, r"(?<=@)\w+", self.locations, Location)
+            self._update_account_balance(self.source)
+            self._update_account_balance(self.destination)
 
     def _extract_and_add(self, text, regex, relationship, Model):
 
@@ -61,6 +61,18 @@ class Transfer(TimeStampedModel):
             relationship.add(model)
 
 
+    def _update_account_balance(self, account):
+
+        logger.info('starting balance for %s is %s', account.title, account.balance)
+
+        ins = Transfer.objects.filter(Q(destination__id=account.id)).aggregate(Sum('amount'))['amount__sum'] or 0
+        outs = Transfer.objects.filter(Q(source__id=account.id)).aggregate(Sum('amount'))['amount__sum'] or 0
+        balance = ins - outs
+        logger.info("new balance for %s is %s (%s - %s)", account.title, balance, ins, outs)
+        account.balance = balance
+        account.save()
+
+
 class Tag(models.Model):
     name = models.CharField(primary_key=True, max_length=20)
 
@@ -68,7 +80,7 @@ class Tag(models.Model):
         return self.name
 
 
-class Location(models.Model):
+class Shop(models.Model):
     name = models.CharField(primary_key=True, max_length=20)
 
     def __str__(self):

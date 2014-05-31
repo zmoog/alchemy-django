@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<h1>{{ object.title }}</h1>
+
+<ul>
+{% for transfer in object.related_transfers %}
+    <li><a href="{% url 'transfer_detail' transfer.id %}">{{ transfer.description }}</a></li>
+{% endfor %}
+</ul>
+
+{% endblock %}
